@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:meta/meta.dart';
 import 'package:path/path.dart' as p;
 import 'package:serverpod/serverpod.dart' hide LogLevel;
 import 'package:serverpod_database/embedded.dart';
@@ -411,6 +412,11 @@ class Serverpod {
         'Accept',
         'User-Agent',
         'X-Requested-With',
+        // Cookie-auth web clients send these on every request; they must be
+        // allow-listed here or a cross-origin preflight blocks the request
+        // before the cookie flow can run.
+        webAuthModeHeaderName,
+        webBasePathHeaderName,
       ],
     );
   });
@@ -655,16 +661,24 @@ class Serverpod {
     } catch (_) {}
   }
 
-  Future<void> _installInterruptHandlers() async {
-    await _sigintSubscription?.cancel();
-    _sigintSubscription = ProcessSignal.sigint.watch().listen(
-      _onInterruptSignal,
-    );
-    await _sigtermSubscription?.cancel();
+  Future<void> _installInterruptHandlers({bool force = false}) async {
+    if (force) {
+      await _sigintSubscription?.cancel();
+      _sigintSubscription = null;
+      await _sigtermSubscription?.cancel();
+      _sigtermSubscription = null;
+    }
+
+    // Use ??= so a second start() on the same instance does not stack
+    // watchers; [force] clears first when reinstalling after embedded
+    // Postgres FFI (watchers taken before that call can miss SIGINT).
+    _sigintSubscription ??= _signalStreamFactory(
+      ProcessSignal.sigint,
+    ).listen(_onInterruptSignal);
     if (!Platform.isWindows) {
-      _sigtermSubscription = ProcessSignal.sigterm.watch().listen(
-        _onShutdownSignal,
-      );
+      _sigtermSubscription ??= _signalStreamFactory(
+        ProcessSignal.sigterm,
+      ).listen(_onShutdownSignal);
     }
   }
 
@@ -805,6 +819,11 @@ class Serverpod {
 
   StreamSubscription<ProcessSignal>? _sigintSubscription;
   StreamSubscription<ProcessSignal>? _sigtermSubscription;
+
+  Stream<ProcessSignal> Function(ProcessSignal signal) _signalStreamFactory =
+      (signal) => signal.watch();
+
+  bool _interruptSignalSent = false;
 
   bool _runtimeSettingsTableReady = true;
   bool _futureCallTableReady = true;
@@ -956,7 +975,11 @@ class Serverpod {
     // Re-install after embedded-Postgres FFI. A watcher created before
     // `startOrAttachEmbeddedPostgres` does not receive SIGINT afterwards.
     if (servesHttp && _watchProcessSignals) {
-      await _installInterruptHandlers();
+      if (_databasePoolManager != null) {
+        await _installInterruptHandlers(force: true);
+      } else {
+        await _installInterruptHandlers();
+      }
     }
     if (servesHttp) {
       _notifyTestReady();
@@ -1224,7 +1247,21 @@ class Serverpod {
     shutdown(exitProcess: true, signalNumber: signal.signalNumber);
   }
 
-  bool _interruptSignalSent = false;
+  /// Cancels the SIGINT/SIGTERM watchers registered by [start].
+  ///
+  /// The signal socket pairs that back them stay open for as long as a
+  /// subscription is alive, so leaving them behind leaks file descriptors and
+  /// keeps a shut down Serverpod handling signals on behalf of the process.
+  Future<void> _cancelSignalWatchers() async {
+    var sigintSubscription = _sigintSubscription;
+    var sigtermSubscription = _sigtermSubscription;
+    _sigintSubscription = null;
+    _sigtermSubscription = null;
+    _interruptSignalSent = false;
+
+    await sigintSubscription?.cancel();
+    await sigtermSubscription?.cancel();
+  }
 
   void _onInterruptSignal(ProcessSignal signal) {
     _writeLifecycleMessage(
@@ -1473,10 +1510,16 @@ class Serverpod {
     // (`exitProcess: false`) must drop the handlers so the test VM does not
     // keep watching SIGINT.
     if (!exitProcess) {
-      await _sigintSubscription?.cancel();
-      _sigintSubscription = null;
-      await _sigtermSubscription?.cancel();
-      _sigtermSubscription = null;
+      try {
+        await _cancelSignalWatchers();
+      } catch (e, stackTrace) {
+        shutdownError = e;
+        _reportException(
+          e,
+          stackTrace,
+          message: 'Error cancelling signal watchers',
+        );
+      }
     }
 
     try {
@@ -1848,5 +1891,19 @@ extension ServerpodInternalMethods on Serverpod {
       includeStackTrace: includeStackTrace,
       submitEvent: submitEvent,
     );
+  }
+
+  /// Overrides how the SIGINT/SIGTERM streams watched by [Serverpod.start] are
+  /// created.
+  ///
+  /// This allows tests to observe the signal subscription lifecycle without
+  /// installing handlers for real process signals, which would be shared with
+  /// every other test running in the same process. Must be called before
+  /// [Serverpod.start].
+  @visibleForTesting
+  void setSignalStreamFactoryForTesting(
+    Stream<ProcessSignal> Function(ProcessSignal signal) signalStreamFactory,
+  ) {
+    _signalStreamFactory = signalStreamFactory;
   }
 }

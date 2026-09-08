@@ -33,18 +33,7 @@ class DartServerCodeGenerator extends CodeGenerator {
       config,
     );
 
-    var codeMap = <String, String>{};
-    for (var entry in modelAllocatorContext.entries) {
-      var path = entry.model.getFullFilePath(config, serverCode: true);
-      codeMap[path] = serverSideGenerator
-          .generateModelLibrary(entry.model)
-          .generateCode(
-            allocator: entry.allocator,
-            formatter: GeneratedDartFormatters.of(path),
-          );
-    }
-
-    return codeMap;
+    return serverSideGenerator.generateCode(modelAllocatorContext);
   }
 
   @override
@@ -74,6 +63,16 @@ class DartServerCodeGenerator extends CodeGenerator {
         config: config,
       ),
     };
+
+    var syncTables = serverClassGenerator.generateSyncTables();
+    if (syncTables != null) {
+      var syncTablesPath = p.joinAll(
+        config.generatedServerSyncTablesFilePathParts,
+      );
+      codeMap[syncTablesPath] = syncTables.generateCode(
+        formatter: GeneratedDartFormatters.of(syncTablesPath),
+      );
+    }
 
     // Modules are never booted on their own, so only server packages get the
     // pre-wired Serverpod entry point.

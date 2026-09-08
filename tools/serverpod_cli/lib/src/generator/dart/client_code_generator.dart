@@ -34,18 +34,7 @@ class DartClientCodeGenerator extends CodeGenerator {
       config,
     );
 
-    var codeMap = <String, String>{};
-    for (var entry in modelAllocatorContext.entries) {
-      var path = entry.model.getFullFilePath(config, serverCode: false);
-      codeMap[path] = clientSideGenerator
-          .generateModelLibrary(entry.model)
-          .generateCode(
-            allocator: entry.allocator,
-            formatter: GeneratedDartFormatters.of(path),
-          );
-    }
-
-    return codeMap;
+    return clientSideGenerator.generateCode(modelAllocatorContext);
   }
 
   @override
@@ -77,6 +66,17 @@ class DartClientCodeGenerator extends CodeGenerator {
           .generateClientEndpointCalls()
           .generateCode(formatter: GeneratedDartFormatters.of(clientPath)),
     };
+
+    var syncTables = clientClassGenerator.generateSyncTables();
+    if (syncTables != null) {
+      var syncTablesPath = p.joinAll([
+        ...config.generatedDartClientModelPathParts,
+        'sync_tables.dart',
+      ]);
+      files[syncTablesPath] = syncTables.generateCode(
+        formatter: GeneratedDartFormatters.of(syncTablesPath),
+      );
+    }
     if (protocolDefinition.models.hasHostClientDatabaseTables &&
         config.type != PackageType.module) {
       files[p.joinAll([

@@ -5,7 +5,7 @@ description: Upgrade Serverpod — minor/patch updates, major upgrades (2.x to 3
 
 # Serverpod minor/patch upgrade
 
-Requirements for this Serverpod version: Dart 3.10.3+, Flutter 3.38.4+. Check the release notes for the version being installed.
+Requirements for this Serverpod version: Dart 3.12.2+, Flutter 3.44.4+. Check the release notes for the version being installed.
 
 Use the same pinned Serverpod version across all packages. Use the CLI to do the upgrade. Ask the user to start the server with `serverpod start` after the upgrade. NEVER update the CLI tooling, instead STOP and ask the user to do it.
 
@@ -16,7 +16,7 @@ Use the same pinned Serverpod version across all packages. Use the CLI to do the
 5. Run `serverpod generate`.
 6. Run `serverpod create-migration`.
 7. Run `dart analyze` in the root of the project and address any issues.
-8. Ensure that the Dockerfile uses at least `FROM dart:3.10.3 AS build`.
+8. Ensure that the Dockerfile uses at least `FROM dart:3.12.2 AS build`.
 9. Inform the user that the upgrade is complete and they should start the server with `serverpod start`.
 
 ## Major upgrade: Serverpod 3.x to 4.0
@@ -35,7 +35,7 @@ After following the regular upgrade process, address the following breaking chan
 
 **Web server:** The deprecated widget classes and legacy static directory classes are removed. Use `WebWidget`, `TemplateWidget`, `ListWidget`, `JsonWidget`, `RedirectWidget` and `StaticRoute.directory(...)`. `WidgetRoute.build` now returns `Future<WebWidget?>`, where `null` responds with 404.
 
-**Auth:** The `authenticationKeyManager` client parameter is removed; use `authSessionManager` (Flutter) or `authKeyProvider`. The native Google Sign-In web implementation is replaced by OAuth2, and dead email exceptions are removed.
+**Auth:** The `authenticationKeyManager` client parameter is removed; use `authSessionManager` (Flutter) or `authKeyProvider`. The native Google Sign-In web implementation is replaced by OAuth2, and dead email exceptions are removed. `flutter_secure_storage` must be 10.0.0 or newer. On Android, upgrading from 9.x directly to 11.x signs users out; go through 10.x first. 11.x also needs `compileSdk` 37.
 
 **Server:** `SerializationManagerServer` is replaced by `DatabaseSerializationManager`. Generated projects now import `src/generated/serverpod.dart` and create the server with `Serverpod(args)`; the `Serverpod(args, Protocol(), Endpoints())` form still works, but prefer the new simpler form.
 
@@ -61,4 +61,3 @@ After following the regular upgrade process, ensure that the following breaking 
 **Auth:** `session.authenticated` is now synchronous. `AuthenticationInfo.authId` non-nullable, `userIdentifier` is `String`. Client: `authenticationKeyManager` → `authKeyProvider`. Custom handlers receive unwrapped Bearer token.
 
 **Deprecated:** Legacy streaming endpoints; use streaming methods.
-

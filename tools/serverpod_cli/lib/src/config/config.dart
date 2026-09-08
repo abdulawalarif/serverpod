@@ -198,6 +198,12 @@ class GeneratorConfig implements ModelLoadConfig {
     'serverpod.dart',
   ];
 
+  /// The path parts of the generated sync tables file.
+  List<String> get generatedServerSyncTablesFilePathParts => [
+    ...generatedServeModelPathParts,
+    'sync_tables.dart',
+  ];
+
   /// The path parts of the generated protocol file.
   List<String> get generatedServerEndpointDescriptionFilePathParts => [
     ...generatedServeModelPathParts,
@@ -742,6 +748,10 @@ class ModuleConfig implements ModelLoadConfig {
   /// The user defined nickname of the module.
   String nickname;
 
+  /// Whether the module exports a generated sync tables list for the
+  /// `serverpod_offline_sync` package, as advertised by its manifest.
+  final bool hasSyncTables;
+
   /// The name of the module (without `_server` or `_client`).
   String name;
 
@@ -800,8 +810,14 @@ class ModuleConfig implements ModelLoadConfig {
     required this.migrationVersions,
     required this.serverPackageDirectoryPathParts,
     this.sharedPackageRootPathParts = const {},
-  }) : dartClientPackage = '${name}_client',
-       serverPackage = '${name}_server';
+    this.hasSyncTables = false,
+  }) : // The internal serverpod module does not follow the module naming
+       // convention: its server package is `serverpod` and its generated
+       // client lives in `serverpod_service_client`.
+       dartClientPackage = name == 'serverpod'
+           ? 'serverpod_service_client'
+           : '${name}_client',
+       serverPackage = name == 'serverpod' ? 'serverpod' : '${name}_server';
 
   /// The url when importing this module in dart code.
   String dartImportUrl(bool serverCode) {
